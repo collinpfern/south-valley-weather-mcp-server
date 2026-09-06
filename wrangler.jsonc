@@ -1,6 +1,6 @@
 /**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
+ * South Valley Weather MCP Server
+ * Cloudflare Worker configuration
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
@@ -8,7 +8,16 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-07-02",
 	"compatibility_flags": ["nodejs_compat"],
+
 	"observability": {
-		"enabled": true,
+		"enabled": true
 	},
+
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "south-valley-weather-db",
+			"database_id": "cffaf3c3-f518-41a7-b45a-e59902688cb3"
+		}
+	]
 }
