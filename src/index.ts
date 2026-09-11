@@ -1,3 +1,4 @@
+```
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
@@ -8,7 +9,6 @@ type WeatherEnv = {
 
 type ObservationRow = {
 	station_name: string;
-	location_name: string | null;
 	observation_ts: number;
 	temperature_f: number | null;
 	temp_high_interval_f: number | null;
@@ -28,34 +28,6 @@ type ObservationRow = {
 	solar_max_interval_wm2: number | null;
 	pressure_inhg: number | null;
 	et_interval_in: number | null;
-};
-
-type DailySummaryRow = {
-	station_name: string;
-	location_name: string | null;
-	summary_date: string;
-	temp_high_f: number | null;
-	temp_low_f: number | null;
-	temp_avg_f: number | null;
-	dew_point_high_f: number | null;
-	dew_point_low_f: number | null;
-	dew_point_avg_f: number | null;
-	humidity_high_pct: number | null;
-	humidity_low_pct: number | null;
-	humidity_avg_pct: number | null;
-	wet_bulb_high_f: number | null;
-	wet_bulb_low_f: number | null;
-	wet_bulb_avg_f: number | null;
-	wind_avg_mph: number | null;
-	wind_max_mph: number | null;
-	gust_max_mph: number | null;
-	rain_total_in: number | null;
-	pressure_high_inhg: number | null;
-	pressure_low_inhg: number | null;
-	pressure_avg_inhg: number | null;
-	solar_avg_wm2: number | null;
-	solar_max_wm2: number | null;
-	observation_count: number | null;
 };
 
 
@@ -114,10 +86,7 @@ let cachedJwks:
 const JWKS_CACHE_MS = 10 * 60 * 1000;
 
 
-function decodeBase64Url(
-	input: string
-): Uint8Array {
-
+function decodeBase64Url(input: string): Uint8Array {
 	const normalized =
 		input
 			.replace(/-/g, "+")
@@ -153,7 +122,6 @@ function decodeBase64Url(
 function decodeJwtJson<T>(
 	segment: string
 ): T {
-
 	const bytes =
 		decodeBase64Url(segment);
 
@@ -239,8 +207,9 @@ async function findJwk(
 				key.kid === kid
 		);
 
+	// If Access rotated its signing key,
+	// immediately refresh the JWKS once.
 	if (!jwk) {
-
 		keys =
 			await fetchJwks(true);
 
@@ -346,6 +315,11 @@ async function verifyAccessJwt(
 		);
 	}
 
+
+	// ----------------------------------------------
+	// VERIFY ISSUER
+	// ----------------------------------------------
+
 	if (
 		payload.iss !==
 		ACCESS_TEAM_DOMAIN
@@ -354,6 +328,11 @@ async function verifyAccessJwt(
 			"JWT issuer does not match this Cloudflare Access team."
 		);
 	}
+
+
+	// ----------------------------------------------
+	// VERIFY AUDIENCE
+	// ----------------------------------------------
 
 	if (
 		!audienceMatches(
@@ -364,6 +343,11 @@ async function verifyAccessJwt(
 			"JWT audience does not match the South Valley Weather application."
 		);
 	}
+
+
+	// ----------------------------------------------
+	// VERIFY EXPIRATION / NOT-BEFORE
+	// ----------------------------------------------
 
 	const nowSeconds =
 		Math.floor(
@@ -392,6 +376,11 @@ async function verifyAccessJwt(
 		);
 	}
 
+
+	// ----------------------------------------------
+	// FETCH SIGNING KEY
+	// ----------------------------------------------
+
 	const jwk =
 		await findJwk(
 			header.kid
@@ -404,6 +393,11 @@ async function verifyAccessJwt(
 			"Unexpected Cloudflare Access signing key type."
 		);
 	}
+
+
+	// ----------------------------------------------
+	// IMPORT PUBLIC KEY
+	// ----------------------------------------------
 
 	const cryptoKey =
 		await crypto.subtle.importKey(
@@ -418,6 +412,11 @@ async function verifyAccessJwt(
 			false,
 			["verify"]
 		);
+
+
+	// ----------------------------------------------
+	// VERIFY SIGNATURE
+	// ----------------------------------------------
 
 	const signedData =
 		new TextEncoder().encode(
@@ -496,34 +495,6 @@ function unixToPacific(
 }
 
 
-function isValidDateString(
-	value: string
-): boolean {
-
-	if (
-		!/^\d{4}-\d{2}-\d{2}$/.test(
-			value
-		)
-	) {
-		return false;
-	}
-
-	const parsed =
-		new Date(
-			`${value}T00:00:00Z`
-		);
-
-	return (
-		!Number.isNaN(
-			parsed.getTime()
-		) &&
-		parsed
-			.toISOString()
-			.slice(0, 10) === value
-	);
-}
-
-
 // ====================================================
 // CREATE MCP SERVER
 // ====================================================
@@ -538,7 +509,7 @@ function createServer(
 				"South Valley Weather",
 
 			version:
-				"2.0.0",
+				"1.1.0",
 		});
 
 
@@ -550,7 +521,7 @@ function createServer(
 		"get_latest_observations",
 		{
 			description:
-				"Get the newest stored South Valley Weather observation for every active station, including Davis and Probe Schedule stations.",
+				"Get the newest stored South Valley Weather observation for every station in D1, including Davis and Probe Schedule stations.",
 
 			inputSchema:
 				z.object({}),
@@ -563,7 +534,6 @@ function createServer(
 					.prepare(`
 						SELECT
 							s.station_name,
-							s.location_name,
 							o.observation_ts,
 							o.temperature_f,
 							o.temp_high_interval_f,
@@ -606,9 +576,6 @@ function createServer(
 
 							AND latest.newest_ts =
 							    o.observation_ts
-
-						WHERE
-							s.active = 1
 
 						ORDER BY
 							s.station_name
@@ -664,58 +631,25 @@ function createServer(
 		"get_observations",
 		{
 			description:
-				"Get stored South Valley Weather observations for any available historical date/time range. Includes Davis and Probe Schedule stations. No 24-hour or historical-age cutoff is imposed. Use pagination for large requests.",
+				"Get stored South Valley Weather 15-minute observations for any available historical date/time range. Includes Davis and Probe Schedule stations. No 24-hour historical cutoff is imposed.",
 
 			inputSchema:
 				z.object({
-
-					start_ts:
-						z
-							.number()
-							.int()
-							.nonnegative()
-							.describe(
-								"Start of requested range as a Unix timestamp in seconds."
-							),
-
-					end_ts:
-						z
-							.number()
-							.int()
-							.nonnegative()
-							.describe(
-								"End of requested range as a Unix timestamp in seconds."
-							),
-
-					station_name:
-						z
-							.string()
-							.min(1)
-							.optional()
-							.describe(
-								"Optional exact station name. Omit to retrieve all stations."
-							),
-
-					limit:
-						z
-							.number()
-							.int()
-							.min(1)
-							.max(5000)
-							.default(2500)
-							.describe(
-								"Maximum number of observations to return in this page."
-							),
-
-					offset:
-						z
-							.number()
-							.int()
-							.min(0)
-							.default(0)
-							.describe(
-								"Number of matching observations to skip for pagination."
-							),
+					start_ts: z.number().int().nonnegative().describe(
+						"Start of requested range as a Unix timestamp in seconds."
+					),
+					end_ts: z.number().int().nonnegative().describe(
+						"End of requested range as a Unix timestamp in seconds."
+					),
+					station_name: z.string().min(1).optional().describe(
+						"Optional exact station name. Omit to retrieve all stations."
+					),
+					limit: z.number().int().min(1).max(5000).default(2500).describe(
+						"Maximum rows to return in this page."
+					),
+					offset: z.number().int().min(0).default(0).describe(
+						"Number of matching rows to skip for pagination."
+					),
 				}),
 		},
 
@@ -726,11 +660,7 @@ function createServer(
 			limit,
 			offset,
 		}) => {
-
-			if (
-				end_ts <
-				start_ts
-			) {
+			if (end_ts < start_ts) {
 				throw new Error(
 					"end_ts must be greater than or equal to start_ts."
 				);
@@ -739,7 +669,6 @@ function createServer(
 			let query = `
 				SELECT
 					s.station_name,
-					s.location_name,
 					o.observation_ts,
 					o.temperature_f,
 					o.temp_high_interval_f,
@@ -759,36 +688,305 @@ function createServer(
 					o.solar_max_interval_wm2,
 					o.pressure_inhg,
 					o.et_interval_in
-
 				FROM observations_15min o
-
 				JOIN stations s
-					ON s.station_id =
-					   o.station_id
-
+					ON s.station_id = o.station_id
 				WHERE
 					o.observation_ts >= ?
 					AND o.observation_ts <= ?
 			`;
 
-			const bindings:
-				(string | number)[] =
-				[
-					start_ts,
-					end_ts,
-				];
+			const bindings: (string | number)[] = [start_ts, end_ts];
 
 			if (station_name) {
-
 				query += `
 					AND s.station_name = ?
 				`;
-
-				bindings.push(
-					station_name
-				);
+				bindings.push(station_name);
 			}
 
 			query += `
 				ORDER BY
-				
+					o.observation_ts ASC,
+					s.station_name ASC
+				LIMIT ?
+				OFFSET ?
+			`;
+
+			bindings.push(limit + 1, offset);
+
+			const result =
+				await env.DB
+					.prepare(query)
+					.bind(...bindings)
+					.all<ObservationRow>();
+
+			const hasMore = result.results.length > limit;
+			const rows = hasMore
+				? result.results.slice(0, limit)
+				: result.results;
+
+			const observations =
+				rows.map((row) => ({
+					...row,
+					local_time: unixToPacific(row.observation_ts),
+				}));
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(
+							{
+								timezone: "America/Los_Angeles",
+								start_timestamp: start_ts,
+								end_timestamp: end_ts,
+								station_name: station_name ?? null,
+								observation_count: observations.length,
+								offset,
+								limit,
+								has_more: hasMore,
+								next_offset: hasMore
+									? offset + observations.length
+									: null,
+								observations,
+							},
+							null,
+							2
+						),
+					},
+				],
+			};
+		}
+	);
+
+
+	// ==================================================
+	// TOOL 3 — DAILY SUMMARY
+	// ==================================================
+
+	server.registerTool(
+		"get_daily_summary",
+		{
+			description:
+				"Get stored South Valley Weather daily summaries for any available date range, including Davis and Probe Schedule stations. Use for historical daily highs, lows, averages, rainfall, dew point, humidity, wet bulb, wind, pressure, solar radiation, and observation counts.",
+
+			inputSchema:
+				z.object({
+					start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe(
+						"First summary date in YYYY-MM-DD format."
+					),
+					end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe(
+						"Last summary date in YYYY-MM-DD format."
+					),
+					station_name: z.string().min(1).optional().describe(
+						"Optional exact station name. Omit to retrieve all stations."
+					),
+				}),
+		},
+
+		async ({
+			start_date,
+			end_date,
+			station_name,
+		}) => {
+			if (end_date < start_date) {
+				throw new Error(
+					"end_date must be greater than or equal to start_date."
+				);
+			}
+
+			let query = `
+				SELECT
+					s.station_name,
+					s.location_name,
+					d.summary_date,
+					d.temp_high_f,
+					d.temp_low_f,
+					d.temp_avg_f,
+					d.dew_point_high_f,
+					d.dew_point_low_f,
+					d.dew_point_avg_f,
+					d.humidity_high_pct,
+					d.humidity_low_pct,
+					d.humidity_avg_pct,
+					d.wet_bulb_high_f,
+					d.wet_bulb_low_f,
+					d.wet_bulb_avg_f,
+					d.wind_avg_mph,
+					d.wind_max_mph,
+					d.gust_max_mph,
+					d.rain_total_in,
+					d.pressure_high_inhg,
+					d.pressure_low_inhg,
+					d.pressure_avg_inhg,
+					d.solar_avg_wm2,
+					d.solar_max_wm2,
+					d.observation_count
+				FROM daily_summary d
+				JOIN stations s
+					ON s.station_id = d.station_id
+				WHERE
+					d.summary_date >= ?
+					AND d.summary_date <= ?
+			`;
+
+			const bindings: string[] = [start_date, end_date];
+
+			if (station_name) {
+				query += `
+					AND s.station_name = ?
+				`;
+				bindings.push(station_name);
+			}
+
+			query += `
+				ORDER BY
+					d.summary_date ASC,
+					s.station_name ASC
+			`;
+
+			const result =
+				await env.DB
+					.prepare(query)
+					.bind(...bindings)
+					.all();
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(
+							{
+								timezone: "America/Los_Angeles",
+								start_date,
+								end_date,
+								station_name: station_name ?? null,
+								summary_count: result.results.length,
+								summaries: result.results,
+							},
+							null,
+							2
+						),
+					},
+				],
+			};
+		}
+	);
+
+
+	// ==================================================
+	// TOOL 4 — COLLECTION STATUS
+	// ==================================================
+
+	server.registerTool(
+		"get_collection_status",
+		{
+			description:
+				"Get the South Valley Weather collection state from D1 so the client can determine when each station was last successfully collected.",
+
+			inputSchema:
+				z.object({}),
+		},
+
+		async () => {
+			const result =
+				await env.DB
+					.prepare(`
+						SELECT
+							s.station_name,
+							cs.*
+						FROM collection_state cs
+						LEFT JOIN stations s
+							ON s.station_id = cs.station_id
+						ORDER BY
+							s.station_name
+					`)
+					.all();
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(
+							{
+								timezone: "America/Los_Angeles",
+								collection_state: result.results,
+							},
+							null,
+							2
+						),
+					},
+				],
+			};
+		}
+	);
+
+	return server;
+}
+
+
+// ====================================================
+// MAIN WORKER
+// ====================================================
+
+export default {
+
+	async fetch(
+		request: Request,
+		env: WeatherEnv,
+		ctx: ExecutionContext
+	): Promise<Response> {
+
+		// ----------------------------------------------
+		// VERIFY CLOUDFLARE ACCESS JWT FIRST
+		// ----------------------------------------------
+
+		try {
+
+			await verifyAccessJwt(
+				request
+			);
+
+		} catch (error) {
+
+			const message =
+				error instanceof Error
+					? error.message
+					: "Unknown authentication error";
+
+			return new Response(
+				`Forbidden: ${message}`,
+				{
+					status: 403,
+
+					headers: {
+						"Content-Type":
+							"text/plain; charset=utf-8",
+					},
+				}
+			);
+		}
+
+
+		// ----------------------------------------------
+		// AUTHENTICATED REQUEST — HAND TO MCP SERVER
+		// ----------------------------------------------
+
+		const handler =
+			createMcpHandler(
+				() =>
+					createServer(
+						env
+					)
+			);
+
+		return handler(
+			request,
+			env,
+			ctx
+		);
+	},
+
+} satisfies ExportedHandler<WeatherEnv>;
+```
