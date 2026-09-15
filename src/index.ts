@@ -989,4 +989,3 @@ export default {
 	},
 
 } satisfies ExportedHandler<WeatherEnv>;
-```
