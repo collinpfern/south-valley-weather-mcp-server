@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
+import { getStationHealth } from "./station-health";
 
 type WeatherEnv = {
 	DB: D1Database;
@@ -921,6 +922,19 @@ function createServer(
 			};
 		}
 	);
+
+ server.registerTool("get_station_health", {
+  description: "Check all registered Davis and ProbeSchedule stations for stale/missing observations, overdue or failed collection attempts, watermark mismatches and missing native reporting intervals. Use before current reporting or forecast verification. Read-only; does not trigger collection.",
+  inputSchema: z.object({
+   station_name: z.string().min(1).optional(),
+   lookback_hours: z.number().int().min(1).max(168).default(24),
+   collection_interval_seconds: z.number().int().min(60).max(86400).default(3600),
+   grace_seconds: z.number().int().min(0).max(86400).default(300),
+   interval_overrides: z.record(z.string(), z.number().int().min(60).max(86400)).default({}).describe("Native reporting interval in seconds, keyed by station_id. Use for sparse histories or changed station settings."),
+  }),
+ }, async ({ station_name, ...options }) => ({
+  content: [{ type: "text", text: JSON.stringify(await getStationHealth(env.DB, options, station_name), null, 2) }],
+ }));
 
 	return server;
 }
