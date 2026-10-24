@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
+import { registerReportTools } from "./report-tools";
 
 type WeatherEnv = {
 	DB: D1Database;
@@ -509,7 +510,7 @@ function createServer(
 				"South Valley Weather",
 
 			version:
-				"1.1.0",
+				"1.2.0",
 		});
 
 
@@ -922,6 +923,7 @@ function createServer(
 		}
 	);
 
+	registerReportTools(server, env.DB);
 	return server;
 }
 

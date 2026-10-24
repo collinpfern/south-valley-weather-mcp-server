@@ -2,14 +2,19 @@
 	"name": "south-valley-weather-mcp-server",
 	"version": "0.0.0",
 	"private": true,
+	"type": "module",
 	"scripts": {
-		"deploy": "wrangler deploy",
+		"deploy": "npm run migrate:remote && wrangler deploy",
 		"dev": "wrangler dev",
 		"format": "oxfmt --write .",
 		"lint:fix": "oxlint --fix",
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
-		"type-check": "tsc --noEmit"
+		"type-check": "tsc --noEmit",
+		"deploy:worker": "wrangler deploy",
+		"migrate:remote": "wrangler d1 migrations apply DB --remote",
+		"migrate:local": "wrangler d1 migrations apply DB --local",
+		"test": "node --test test/*.test.mjs"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "1.30.0",
@@ -18,6 +23,7 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"miniflare": "5.20261019.2-beta",
 		"oxfmt": "^0.56.0",
 		"oxlint": "^1.71.0",
 		"typescript": "6.0.3",
